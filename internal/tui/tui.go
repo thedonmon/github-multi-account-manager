@@ -326,6 +326,26 @@ func (m model) copySSHKey() model {
 	return m
 }
 
+// wrapText wraps text at the specified width
+func wrapText(text string, width int) string {
+	if len(text) <= width {
+		return text
+	}
+
+	var wrapped strings.Builder
+	for i := 0; i < len(text); i += width {
+		end := i + width
+		if end > len(text) {
+			end = len(text)
+		}
+		wrapped.WriteString(text[i:end])
+		if end < len(text) {
+			wrapped.WriteString("\n")
+		}
+	}
+	return wrapped.String()
+}
+
 func (m model) showDetails() model {
 	if m.table.Cursor() < 0 {
 		return m
@@ -352,7 +372,11 @@ func (m model) showDetails() model {
 		if err == nil {
 			details.WriteString(statusStyle.Render("✓ SSH Key exists\n\n"))
 			details.WriteString("Public Key:\n")
-			details.WriteString(infoStyle.Render(pubKey))
+
+			// Wrap the SSH key to prevent overflow
+			// SSH keys are typically 300-400 chars, wrap at 80 chars per line
+			wrapped := wrapText(pubKey, 80)
+			details.WriteString(infoStyle.Render(wrapped))
 			details.WriteString("\n\nPress 'c' in main view to copy to clipboard")
 		}
 	} else {
