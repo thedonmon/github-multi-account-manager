@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghmm"
+version = "0.1.0"
+description = "GitHub Multi-Account Manager - Easily manage multiple GitHub accounts"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "thedonmon", email = "22967202+thedonmon@users.noreply.github.com"}
+]
+keywords = ["git", "github", "ssh", "multi-account", "tui"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "textual>=0.44.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
+    "click>=8.0.0",
+    "pyperclip>=1.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+ghmm = "ghmm.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/thedonmon/github-multi-account-manager"
+Repository = "https://github.com/thedonmon/github-multi-account-manager"
+Issues = "https://github.com/thedonmon/github-multi-account-manager/issues"
+
+[tool.setuptools]
+packages = ["ghmm"]
+
+[tool.black]
+line-length = 100
+target-version = ["py38"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
