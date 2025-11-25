@@ -8,6 +8,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/donbowman/github-multi-account-manager/internal/config"
@@ -50,6 +51,10 @@ type keyMap struct {
 	Apply       key.Binding
 	CopyKey     key.Binding
 	ShowDetails key.Binding
+	AddAccount  key.Binding
+	AutoSync    key.Binding
+	GenerateKey key.Binding
+	TestConn    key.Binding
 }
 
 var keys = keyMap{
@@ -81,18 +86,46 @@ var keys = keyMap{
 		key.WithKeys("enter", " "),
 		key.WithHelp("enter", "details"),
 	),
+	AddAccount: key.NewBinding(
+		key.WithKeys("n"),
+		key.WithHelp("n", "add account"),
+	),
+	AutoSync: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "auto-sync"),
+	),
+	GenerateKey: key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("g", "generate SSH key"),
+	),
+	TestConn: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "test connection"),
+	),
 }
 
+type viewMode int
+
+const (
+	viewTable viewMode = iota
+	viewAddAccount
+	viewDetails
+)
+
 type model struct {
-	table          table.Model
-	config         *config.Config
-	sshManager     *ssh.Manager
-	gitManager     *git.Manager
-	shellManager   *shell.Manager
-	statusMsg      string
-	errorMsg       string
-	showingDetails bool
-	detailsText    string
+	table        table.Model
+	config       *config.Config
+	sshManager   *ssh.Manager
+	gitManager   *git.Manager
+	shellManager *shell.Manager
+	statusMsg    string
+	errorMsg     string
+	mode         viewMode
+	detailsText  string
+	// Form fields for adding account
+	formInputs   []textinput.Model
+	formFocused  int
+	emptyStartup bool // True if started with no accounts
 }
 
 func (m model) Init() tea.Cmd {
@@ -105,10 +138,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// If showing details, any key dismisses
-		if m.showingDetails {
-			m.showingDetails = false
+		if m.mode == viewDetails {
+			m.mode = viewTable
 			m.detailsText = ""
 			return m, nil
+		}
+
+		// If in add account mode, handle form navigation
+		if m.mode == viewAddAccount {
+			return m.handleFormInput(msg)
 		}
 
 		switch {
@@ -128,6 +166,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.ShowDetails):
 			m = m.showDetails()
+
+		case key.Matches(msg, keys.AddAccount):
+			m = m.startAddAccount()
+
+		case key.Matches(msg, keys.AutoSync):
+			m = m.autoSync()
+
+		case key.Matches(msg, keys.GenerateKey):
+			m = m.generateSSHKey()
+
+		case key.Matches(msg, keys.TestConn):
+			m = m.testConnection()
 		}
 	}
 
@@ -136,10 +186,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	if m.showingDetails {
+	switch m.mode {
+	case viewDetails:
 		return m.renderDetails()
+	case viewAddAccount:
+		return m.renderAddAccountForm()
+	default:
+		return m.renderTable()
 	}
+}
 
+func (m model) renderTable() string {
 	title := titleStyle.Render("📦 GitHub Multi-Account Manager")
 
 	var status string
@@ -150,7 +207,7 @@ func (m model) View() string {
 	}
 
 	help := helpStyle.Render(
-		"q:quit • r:refresh • a:apply configs • c:copy SSH key • enter:details",
+		"q:quit • n:add • s:sync • g:gen key • t:test • a:apply • c:copy • enter:details",
 	)
 
 	return fmt.Sprintf("%s\n\n%s\n\n%s\n%s\n",
@@ -304,7 +361,241 @@ func (m model) showDetails() model {
 	}
 
 	m.detailsText = details.String()
-	m.showingDetails = true
+	m.mode = viewDetails
+	return m
+}
+
+func (m model) startAddAccount() model {
+	// Initialize form inputs
+	inputs := make([]textinput.Model, 4)
+
+	inputs[0] = textinput.New()
+	inputs[0].Placeholder = "work, personal, etc."
+	inputs[0].Focus()
+	inputs[0].CharLimit = 50
+	inputs[0].Width = 40
+	inputs[0].Prompt = "Account name: "
+
+	inputs[1] = textinput.New()
+	inputs[1].Placeholder = "your-github-username"
+	inputs[1].CharLimit = 100
+	inputs[1].Width = 40
+	inputs[1].Prompt = "GitHub username: "
+
+	inputs[2] = textinput.New()
+	inputs[2].Placeholder = "you@example.com"
+	inputs[2].CharLimit = 100
+	inputs[2].Width = 40
+	inputs[2].Prompt = "Email: "
+
+	inputs[3] = textinput.New()
+	inputs[3].Placeholder = "~/code/work"
+	inputs[3].CharLimit = 200
+	inputs[3].Width = 40
+	inputs[3].Prompt = "Directory: "
+
+	m.formInputs = inputs
+	m.formFocused = 0
+	m.mode = viewAddAccount
+	m.statusMsg = ""
+	m.errorMsg = ""
+
+	return m
+}
+
+func (m model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = viewTable
+		m.formInputs = nil
+		return m, nil
+
+	case "tab", "down":
+		m.formInputs[m.formFocused].Blur()
+		m.formFocused++
+		if m.formFocused >= len(m.formInputs) {
+			m.formFocused = 0
+		}
+		m.formInputs[m.formFocused].Focus()
+		return m, nil
+
+	case "shift+tab", "up":
+		m.formInputs[m.formFocused].Blur()
+		m.formFocused--
+		if m.formFocused < 0 {
+			m.formFocused = len(m.formInputs) - 1
+		}
+		m.formInputs[m.formFocused].Focus()
+		return m, nil
+
+	case "enter":
+		// Validate and save
+		name := strings.TrimSpace(m.formInputs[0].Value())
+		username := strings.TrimSpace(m.formInputs[1].Value())
+		email := strings.TrimSpace(m.formInputs[2].Value())
+		directory := strings.TrimSpace(m.formInputs[3].Value())
+
+		if name == "" || username == "" || email == "" || directory == "" {
+			m.errorMsg = "❌ All fields are required"
+			return m, nil
+		}
+
+		// Add account (this also saves the config)
+		if err := m.config.AddAccount(name, username, email, directory); err != nil {
+			m.errorMsg = fmt.Sprintf("❌ Failed to add account: %v", err)
+			return m, nil
+		}
+
+		m.mode = viewTable
+		m.formInputs = nil
+		m = m.refreshTable()
+		m.statusMsg = fmt.Sprintf("✓ Added account '%s'! Press 'a' to apply configs", name)
+		m.errorMsg = ""
+
+		// If this was the first account during startup, set as default
+		if m.emptyStartup && len(m.config.ListAccounts()) == 1 {
+			m.config.SetDefaultAccount(name)
+		}
+
+		return m, nil
+	}
+
+	// Update the focused input
+	var cmd tea.Cmd
+	m.formInputs[m.formFocused], cmd = m.formInputs[m.formFocused].Update(msg)
+	return m, cmd
+}
+
+func (m model) renderAddAccountForm() string {
+	title := titleStyle.Render("Add New Account")
+
+	var form strings.Builder
+	form.WriteString("\n")
+	for i, input := range m.formInputs {
+		form.WriteString(input.View())
+		form.WriteString("\n")
+		if i < len(m.formInputs)-1 {
+			form.WriteString("\n")
+		}
+	}
+
+	var status string
+	if m.errorMsg != "" {
+		status = errorStyle.Render(m.errorMsg)
+	}
+
+	help := helpStyle.Render("tab/↓:next • shift+tab/↑:prev • enter:save • esc:cancel")
+
+	return fmt.Sprintf("%s\n\n%s\n\n%s\n%s\n",
+		title,
+		baseStyle.Render(form.String()),
+		status,
+		help,
+	)
+}
+
+func (m model) autoSync() model {
+	imported, err := m.config.ImportFromExistingSetup()
+	if err != nil {
+		m.errorMsg = fmt.Sprintf("❌ Auto-sync failed: %v", err)
+		m.statusMsg = ""
+		return m
+	}
+
+	if imported == 0 {
+		m.statusMsg = "No accounts found in .gitconfig or .ssh/config"
+		m.errorMsg = ""
+	} else {
+		m = m.refreshTable()
+		m.statusMsg = fmt.Sprintf("✓ Imported %d account(s) from existing setup!", imported)
+		m.errorMsg = ""
+	}
+
+	return m
+}
+
+func (m model) generateSSHKey() model {
+	if m.table.Cursor() < 0 {
+		m.errorMsg = "❌ No account selected"
+		m.statusMsg = ""
+		return m
+	}
+
+	accounts := m.config.ListAccounts()
+	if m.table.Cursor() >= len(accounts) {
+		return m
+	}
+
+	account := accounts[m.table.Cursor()]
+
+	// Check if key already exists
+	if _, err := os.Stat(account.SSHKeyPath); err == nil {
+		m.errorMsg = fmt.Sprintf("⚠️  SSH key already exists for %s", account.Name)
+		m.statusMsg = ""
+		return m
+	}
+
+	// Generate the key
+	if err := m.sshManager.GenerateKey(account.SSHKeyPath, account.Email, "ed25519"); err != nil {
+		m.errorMsg = fmt.Sprintf("❌ Failed to generate key: %v", err)
+		m.statusMsg = ""
+		return m
+	}
+
+	// Get and copy the public key
+	pubKey, err := m.sshManager.GetPublicKey(account.SSHKeyPath)
+	if err != nil {
+		m.errorMsg = fmt.Sprintf("❌ Failed to read public key: %v", err)
+		m.statusMsg = ""
+		return m
+	}
+
+	if err := clipboard.WriteAll(pubKey); err != nil {
+		m.statusMsg = fmt.Sprintf("✓ Key generated for %s! Press 'enter' to see details", account.Name)
+	} else {
+		m.statusMsg = fmt.Sprintf("✓ SSH key generated and copied! Add it to GitHub, then press 't' to test", account.Name)
+	}
+	m.errorMsg = ""
+	m = m.refreshTable()
+
+	return m
+}
+
+func (m model) testConnection() model {
+	if m.table.Cursor() < 0 {
+		m.errorMsg = "❌ No account selected"
+		m.statusMsg = ""
+		return m
+	}
+
+	accounts := m.config.ListAccounts()
+	if m.table.Cursor() >= len(accounts) {
+		return m
+	}
+
+	account := accounts[m.table.Cursor()]
+
+	// Check if SSH key exists
+	if _, err := os.Stat(account.SSHKeyPath); err != nil {
+		m.errorMsg = fmt.Sprintf("❌ No SSH key found for %s. Press 'g' to generate one", account.Name)
+		m.statusMsg = ""
+		return m
+	}
+
+	m.statusMsg = fmt.Sprintf("Testing connection for %s...", account.Name)
+
+	// Test the connection
+	success, message := m.sshManager.TestConnection(account.HostAlias)
+
+	if success {
+		m.statusMsg = fmt.Sprintf("✓ %s connected successfully!", account.Name)
+		m.errorMsg = ""
+	} else {
+		m.errorMsg = fmt.Sprintf("❌ Connection failed for %s: %s", account.Name, message)
+		m.statusMsg = ""
+	}
+
+	m = m.refreshTable()
 	return m
 }
 
@@ -316,22 +607,15 @@ func Run() error {
 		return fmt.Errorf("failed to initialize config: %w", err)
 	}
 
-	// Auto-import from .gitconfig if no accounts configured
-	if len(cfg.ListAccounts()) == 0 {
-		if imported, err := cfg.ImportFromGitconfig(); err == nil && imported > 0 {
-			fmt.Printf("✨ Auto-imported %d account(s) from .gitconfig\n", imported)
-		}
-	}
+	emptyStartup := false
 
-	// Still no accounts? Show helpful message
+	// Auto-import from existing setup if no accounts configured
 	if len(cfg.ListAccounts()) == 0 {
-		fmt.Println("👋 No accounts configured yet!")
-		fmt.Println("\nTo get started:")
-		fmt.Println("  1. Configure includeIf in your .gitconfig, or")
-		fmt.Println("  2. Use ghmm-cli to add accounts:")
-		fmt.Println("\n     go build -o bin/ghmm-cli ./cmd/ghmm-cli")
-		fmt.Println("     ./bin/ghmm-cli add work user@work.com ~/code/work")
-		return nil
+		emptyStartup = true
+		if imported, err := cfg.ImportFromExistingSetup(); err == nil && imported > 0 {
+			fmt.Printf("✨ Auto-detected %d account(s) from .gitconfig and .ssh/config\n", imported)
+			emptyStartup = false
+		}
 	}
 
 	sshMgr, err := ssh.New()
@@ -382,10 +666,17 @@ func Run() error {
 		sshManager:   sshMgr,
 		gitManager:   gitMgr,
 		shellManager: shellMgr,
-		statusMsg:    fmt.Sprintf("Loaded %d account(s) • Press 'a' to apply configs", len(cfg.ListAccounts())),
+		emptyStartup: emptyStartup,
 	}
 
-	// Load initial data
+	// Load initial data or show welcome
+	if emptyStartup {
+		m.mode = viewTable
+		m.statusMsg = "👋 Welcome! Press 'n' to add an account or 's' to auto-sync from existing setup"
+	} else {
+		m.statusMsg = fmt.Sprintf("Loaded %d account(s) • Press 'a' to apply configs", len(cfg.ListAccounts()))
+	}
+
 	m = m.refreshTable()
 
 	p := tea.NewProgram(m, tea.WithAltScreen())

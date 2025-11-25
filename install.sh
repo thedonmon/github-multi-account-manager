@@ -6,34 +6,44 @@ set -e
 
 echo "🚀 Installing GitHub Multi-Account Manager..."
 
-# Check for Python 3
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 is required but not installed."
-    echo "Please install Python 3.8 or higher and try again."
+# Check for Go
+if ! command -v go &> /dev/null; then
+    echo "❌ Go is required but not installed."
+    echo "Please install Go 1.21 or higher and try again."
+    echo "Visit: https://go.dev/doc/install"
     exit 1
 fi
 
-# Check Python version
-PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-REQUIRED_VERSION="3.8"
+# Check Go version
+GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+REQUIRED_VERSION="1.21"
 
-if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then 
-    echo "❌ Python $REQUIRED_VERSION or higher is required (found $PYTHON_VERSION)"
-    exit 1
+echo "✅ Go $GO_VERSION detected"
+
+# Build binaries
+echo "📦 Building ghmm..."
+mkdir -p bin
+go build -o bin/ghmm ./cmd/ghmm
+go build -o bin/ghmm-cli ./cmd/ghmm-cli
+
+# Optional: Move to PATH
+read -p "Install to /usr/local/bin? (y/n) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    sudo mv bin/ghmm /usr/local/bin/
+    sudo mv bin/ghmm-cli /usr/local/bin/
+    echo "✅ Installed to /usr/local/bin/"
+else
+    echo "📂 Binaries are in ./bin/"
+    echo "   Add to PATH or run directly: ./bin/ghmm"
 fi
-
-echo "✅ Python $PYTHON_VERSION detected"
-
-# Install using pip
-echo "📦 Installing ghmm..."
-pip3 install -e .
 
 echo ""
 echo "✨ Installation complete!"
 echo ""
 echo "📚 Quick Start:"
 echo "  - Run 'ghmm' to launch the interactive TUI"
-echo "  - Run 'ghmm add-account' to add your first account"
-echo "  - Run 'ghmm --help' for all commands"
+echo "  - Run 'ghmm-cli add <name> <username> <email> <directory>' to add accounts"
+echo "  - Run 'ghmm-cli --help' for all commands"
 echo ""
 echo "🔗 Documentation: https://github.com/thedonmon/github-multi-account-manager"

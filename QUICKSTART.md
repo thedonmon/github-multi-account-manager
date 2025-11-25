@@ -1,44 +1,71 @@
 # Quick Start - Testing the Bubbletea TUI
 
-## Running Outside of the Session
+## 🚀 The Fastest Way to Get Started
 
-### 1. Navigate to the project
+### For New Users (Clean Machine)
+
 ```bash
+# 1. Build the binaries
 cd ~/SourceCode/personal/github-multi-account-manager
-```
-
-### 2. Ensure you're on the right branch
-```bash
-git checkout bubbletea-conversion
-```
-
-### 3. Build the binary
-```bash
 go build -o bin/ghmm ./cmd/ghmm
+go build -o bin/ghmm-cli ./cmd/ghmm-cli
+
+# 2. Run the setup wizard - it does EVERYTHING for you!
+./bin/ghmm-cli setup
+
+# Follow the prompts to:
+# - Add account details
+# - Generate SSH keys (automatic!)
+# - Get key copied to clipboard
+# - Add to GitHub
+# - Test connection
+# - Add more accounts
 ```
 
-### 4. Run the TUI
+**That's it!** You'll have a fully working multi-account setup in under 5 minutes! 🎉
+
+### For Existing Users (Has .gitconfig)
+
 ```bash
+# 1. Build and run the TUI
+cd ~/SourceCode/personal/github-multi-account-manager
+go build -o bin/ghmm ./cmd/ghmm
 ./bin/ghmm
-```
 
-That's it! The TUI will:
-- Auto-import accounts from your existing `.gitconfig` (if configured)
-- Display all your GitHub accounts in a table
-- Show keyboard shortcuts at the bottom
+# The TUI will:
+# - Auto-import accounts from your existing `.gitconfig`
+# - Display all your GitHub accounts in a table
+# - Show keyboard shortcuts at the bottom
+```
 
 ## Keyboard Controls
 
 - `q` or `Ctrl+C` - Quit
+- `n` - Add new account (interactive form)
+- `s` - Auto-sync from existing .gitconfig/.ssh/config
 - `r` - Refresh account list
+- `a` - Apply configurations to SSH, Git, and Shell
+- `c` - Copy SSH key to clipboard
+- `enter` - Show account details
 - `↑` `↓` - Navigate between accounts
 
 ## First Time Setup (if you don't have accounts)
 
-If you don't have a `.gitconfig` with includeIf directives, you can add test accounts:
+If you don't have a `.gitconfig` with includeIf directives, you can:
 
+**Option 1: Use the TUI (Recommended)**
 ```bash
-# Build the CLI helper (optional)
+# Launch TUI
+./bin/ghmm
+
+# The TUI will show:
+# - Press 'n' to add an account interactively
+# - Press 's' to auto-sync from existing setup
+```
+
+**Option 2: Use the CLI**
+```bash
+# Build the CLI helper
 go build -o bin/ghmm-cli ./cmd/ghmm-cli
 
 # Add accounts
@@ -118,18 +145,21 @@ go build -o bin/ghmm ./cmd/ghmm
 /Users/don/SourceCode/personal/github-multi-account-manager/bin/ghmm
 ```
 
-## What's Working vs Not Yet Implemented
+## What's Working
 
-### ✅ Working
-- Display accounts in a table
-- Auto-import from existing `.gitconfig`
+### ✅ Fully Implemented
+- Display accounts in a beautiful table
+- Auto-import from existing `.gitconfig` and `.ssh/config`
 - Keyboard navigation
 - Config file management (YAML)
-- Account add/remove via CLI
-
-### ⏳ TODO
-- Add accounts from TUI (modal dialog)
-- SSH key generation button
-- Test connection button
+- Account add/remove via CLI and TUI
+- Interactive account addition form in TUI
 - Apply configurations (SSH, Git, Shell)
 - Copy SSH key to clipboard
+- Show detailed account information
+- Auto-sync from existing setup
+
+### 🚀 Future Enhancements
+- SSH key generation from TUI
+- Test SSH connection to GitHub
+- Account editing
